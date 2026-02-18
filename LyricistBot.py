@@ -8,24 +8,21 @@ from pyrogram.errors import UserNotParticipant
 import yt_dlp
 import lyricsgenius
 
-# --- 🌐 RENDER PORT BINDING FIX ---
-# Ye hissa Render ko 'Live' dikhane ke liye hai
+# --- 🌐 RENDER PORT BINDING ---
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Bot is Running Live!"
+    return "Bot is Running Live with Bypass Logic!"
 
 def run_web():
-    # Render default port 10000 use karta hai, ye wahi bind karega
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host="0.0.0.0", port=port)
 
-# Background mein web server start karein
 threading.Thread(target=run_web, daemon=True).start()
 
-# --- 🟢 CONFIGURATION (Updated with your data) ---
-API_ID = 38456866  # Maine isse integer bana diya hai
+# --- 🟢 CONFIGURATION ---
+API_ID = 38456866 
 API_HASH = "30a8f347f538733a1d57dae8cc458ddc"
 BOT_TOKEN = "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg"
 GENIUS_TOKEN = "w-XTArszGpAQaaLu-JlViwy1e-0rxx4dvwqQzOEtcmmpYndHm_nkFTvAB5BsY-ww"
@@ -51,7 +48,6 @@ async def check_fsub(client, message):
         )
         return False
     except Exception:
-        # Agar koi error aaye (like bot admin nahi hai), toh bypass kar do
         return True
 
 # --- 🎵 MUSIC & LYRICS ---
@@ -70,13 +66,22 @@ async def song_handler(client, message):
 
     m = await message.reply_text("🔎 **Dhoond raha hoon...**")
 
+    # --- 🛠 BYPASS OPTIONS ADDED HERE ---
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': '%(title)s.mp3',
         'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
         'quiet': True,
         'default_search': 'ytsearch',
-        'noplaylist': True
+        'noplaylist': True,
+        'nocheckcertificate': True,
+        'geo_bypass': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+        }
     }
 
     try:
@@ -95,7 +100,6 @@ async def song_handler(client, message):
         
         lyrics_text = "Lyrics nahi mil payi! 😶"
         try:
-            # Lyrics search with song title
             song = genius.search_song(title)
             if song:
                 lyrics_text = song.lyrics
@@ -122,7 +126,7 @@ async def song_handler(client, message):
         os.remove(file_name)
 
     except Exception as e:
-        await m.edit(f"Galti ho gayi: {str(e)}")
+        await m.edit(f"❌ **Error:**\n`{str(e)[:200]}`\n\nBhai, YouTube ne block kiya hai. Agar ye baar-baar ho toh hume cookies use karni padengi.")
 
-print("Bot is starting...")
+print("Bot is starting with bypass headers...")
 app.run()
