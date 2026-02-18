@@ -1,16 +1,17 @@
-# Hum Alpine use karenge kyunki ye fast aur error-free hai
-FROM python:3.10-alpine
+# Python 3.11 use karenge taaki 'Self' wala error khatam ho jaye
+FROM python:3.11-slim
 
-# FFMPEG aur zaroori tools install karne ke liye
-RUN apk add --no-cache ffmpeg gcc musl-dev python3-dev libffi-dev
+# FFMPEG install karne ke liye stable command
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Requirements install karein
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Bot run karein
 CMD ["python", "LyricistBot.py"]
