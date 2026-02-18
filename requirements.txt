@@ -3,5 +3,4 @@ tgcrypto
 requests
 flask
 lyricsgenius
-yt-dlp
 spotipy
