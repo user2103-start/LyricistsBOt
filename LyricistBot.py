@@ -1,15 +1,15 @@
 import os
 import requests
 import threading
+import lyricsgenius
 from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import lyricsgenius
 
-# --- 🌐 ZEABUR PORT BINDING ---
+# --- 🌐 ZEABUR PORT BINDING (Always Running) ---
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Bot is Healthy and Running!"
+def home(): return "Bot is Healthy and Singing! 🎵"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -21,59 +21,103 @@ threading.Thread(target=run_web, daemon=True).start()
 API_ID = int(os.environ.get("API_ID", 38456866))
 API_HASH = os.environ.get("API_HASH", "30a8f347f538733a1d57dae8cc458ddc")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg")
-GENIUS_TOKEN = os.environ.get("GENIUS_TOKEN", "w-XTArszGpAQaaLu-JlViwy1e-0rxx4dvwqQzOEtcmmpYndHm_nkFTvAB5BsY-ww")
-
-# Teri ID JSON se uthayi hai
-OWNER_ID = 6593129349 
+# Tera naya Genius Token yahan set kar diya hai:
+GENIUS_TOKEN = "w-XTArszGpAQaaLu-JlViwy1e-0rxx4dvwqQzOEtcmmpYndHm_nkFTvAB5BsY-ww"
 
 app = Client("LyricistBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+genius = lyricsgenius.Genius(GENIUS_TOKEN)
+genius.verbose = False # Taaki terminal mein kachra na bhare
+genius.remove_section_headers = True # [Chorus] [Verse] jaise headers hatane ke liye
 
-# --- 🎵 SEARCH FUNCTION ---
-def search_saavn(query):
-    search_url = f"https://jiosaavn-api-v3.vercel.app/search/songs?query={query}"
+# --- 🎵 FUNCTIONS ---
+def get_clean_lyrics(song_title, artist_name):
     try:
-        response = requests.get(search_url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            return data[0] if data else None
+        song = genius.search_song(song_title, artist_name)
+        if song:
+            # Lyrics ki formatting clean kar rahe hain
+            lyrics = song.lyrics
+            # Genius aksar pehli line mein title daal deta hai, usse hatane ke liye:
+            clean_lyrics = lyrics.split('Lyrics', 1)[-1].strip()
+            return clean_lyrics
+        return "Sorry bhai, is gaane ke lyrics nahi mile. 🥀"
+    except Exception:
+        return "Lyrics fetch karne mein thoda issue aaya. 🏗️"
+
+def search_saavn(query):
+    url = f"https://saavn.dev/api/search/songs?query={query}"
+    try:
+        res = requests.get(url, timeout=10).json()
+        if res['success'] and res['data']['results']:
+            return res['data']['results'][0]
     except: return None
 
+# --- 🤖 BOT HANDLERS ---
 @app.on_message(filters.command("start"))
 async def start(client, message):
-    await message.reply_text(f"Hello {message.from_user.first_name}!\nBot is online on Zeabur! Send /song [name]")
+    await message.reply_text(
+        f"**Namaste {message.from_user.first_name}!** 🙏\n\n"
+        "Main hoon tera **Lyricist Bot**. Main gaane download bhi karta hoon aur unke lyrics bhi dhoondta hoon.\n\n"
+        "**Usage:** `/song [gaane ka naam]`"
+    )
 
 @app.on_message(filters.command("song"))
 async def song_handler(client, message):
-    # FSUB bypass for testing
+    if len(message.command) < 2:
+        return await message.reply_text("Bhai, gaane ka naam toh likh! Jaise: `/song Safarnama`")
+
     query = " ".join(message.command[1:])
-    if not query: 
-        return await message.reply_text("Bhai, gaane ka naam toh likh! (e.g. /song Kesariya)")
+    m = await message.reply_text("🔎 **Dhoond raha hoon, thoda sabar...**")
 
-    m = await message.reply_text("🔎 Searching and Downloading...")
     song_data = search_saavn(query)
-
     if not song_data:
-        return await m.edit("❌ Song nahi mila ya API down hai.")
+        return await m.edit("❌ Gaana nahi mila! Kuch aur try kar.")
 
     try:
-        title = song_data.get('song')
-        download_url = song_data.get('media_url')
-        thumb = song_data.get('image')
+        title = song_data['name']
+        artist = song_data['artists']['primary'][0]['name']
+        download_url = song_data['downloadUrl'][-1]['url'] # Best quality
+        thumb = song_data['image'][-1]['url']
         
-        audio_file = f"{title}.mp3"
-        res = requests.get(download_url)
-        with open(audio_file, 'wb') as f: 
-            f.write(res.content)
+        await m.edit(f"✍️ **'{title}' ke lyrics likh raha hoon...**")
+        lyrics_text = get_clean_lyrics(title, artist)
+        
+        # Telegram limit handle karne ke liye (max 4096 chars)
+        if len(lyrics_text) > 3500: lyrics_text = lyrics_text[:3500] + "..."
 
-        await message.reply_photo(photo=thumb, caption=f"🎵 **Title:** {title}\n⚡ **Powered by:** Zeabur")
-        await message.reply_audio(audio=open(audio_file, 'rb'), title=title)
+        caption = (
+            f"🎵 **Song:** `{title}`\n"
+            f"👤 **Artist:** `{artist}`\n"
+            f"━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📜 **LYRICS:**\n\n`{lyrics_text}`\n\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ **Powered by:** @Zeabur"
+        )
+
+        await m.edit("📥 **Gaana pack kar raha hoon (Downloading)...**")
+        file_name = f"{title}.mp3".replace("/", "-") # Safe filename
+        audio_res = requests.get(download_url)
+        with open(file_name, 'wb') as f: f.write(audio_res.content)
+
+        # Final Delivery
+        await message.reply_photo(
+            photo=thumb,
+            caption=caption,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Search More 🔎", switch_inline_query_current_chat="")]
+            ])
+        )
+        await message.reply_audio(
+            audio=open(file_name, 'rb'), 
+            title=title, 
+            performer=artist,
+            thumb=thumb
+        )
         
-        if os.path.exists(audio_file):
-            os.remove(audio_file)
+        if os.path.exists(file_name): os.remove(file_name)
         await m.delete()
-        
+
     except Exception as e:
         await m.edit(f"Error: {e}")
 
-print("Bot is starting...")
+print("Bot deployed successfully on Zeabur!")
 app.run()
