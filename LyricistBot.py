@@ -6,10 +6,10 @@ from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# --- 🌐 ZEABUR PORT BINDING (Always Running) ---
+# --- 🌐 ZEABUR PORT BINDING ---
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Bot is Healthy and Singing! 🎵"
+def home(): return "Bot is Online and Rocking! 🎸"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -18,38 +18,38 @@ def run_web():
 threading.Thread(target=run_web, daemon=True).start()
 
 # --- 🟢 CONFIGURATION ---
-API_ID = int(os.environ.get("API_ID", 38456866))
-API_HASH = os.environ.get("API_HASH", "30a8f347f538733a1d57dae8cc458ddc")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg")
-# Tera naya Genius Token yahan set kar diya hai:
+# Ye values tumne pehle di thi, wahi use kar raha hoon
+API_ID = 38456866
+API_HASH = "30a8f347f538733a1d57dae8cc458ddc"
+BOT_TOKEN = "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg"
 GENIUS_TOKEN = "w-XTArszGpAQaaLu-JlViwy1e-0rxx4dvwqQzOEtcmmpYndHm_nkFTvAB5BsY-ww"
 
 app = Client("LyricistBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 genius = lyricsgenius.Genius(GENIUS_TOKEN)
-genius.verbose = False # Taaki terminal mein kachra na bhare
-genius.remove_section_headers = True # [Chorus] [Verse] jaise headers hatane ke liye
+genius.verbose = False
+genius.remove_section_headers = True
 
-# --- 🎵 FUNCTIONS ---
-def get_clean_lyrics(song_title, artist_name):
-    try:
-        song = genius.search_song(song_title, artist_name)
-        if song:
-            # Lyrics ki formatting clean kar rahe hain
-            lyrics = song.lyrics
-            # Genius aksar pehli line mein title daal deta hai, usse hatane ke liye:
-            clean_lyrics = lyrics.split('Lyrics', 1)[-1].strip()
-            return clean_lyrics
-        return "Sorry bhai, is gaane ke lyrics nahi mile. 🥀"
-    except Exception:
-        return "Lyrics fetch karne mein thoda issue aaya. 🏗️"
-
-def search_saavn(query):
-    url = f"https://saavn.dev/api/search/songs?query={query}"
-    try:
-        res = requests.get(url, timeout=10).json()
-        if res['success'] and res['data']['results']:
-            return res['data']['results'][0]
-    except: return None
+# --- 🎵 MULTI-SOURCE SEARCH FUNCTION ---
+def search_song(query):
+    # Source 1: Saavn.me (Current best)
+    urls = [
+        f"https://saavn.me/search/songs?query={query}",
+        f"https://saavn.dev/api/search/songs?query={query}",
+        f"https://jiosaavn-api-v3.vercel.app/search/songs?query={query}"
+    ]
+    
+    for url in urls:
+        try:
+            res = requests.get(url, timeout=5).json()
+            # Handling different API structures
+            if isinstance(res, dict) and res.get('status') == 'SUCCESS':
+                data = res.get('data', {}).get('results', [])
+                if data: return data[0]
+            elif isinstance(res, list) and len(res) > 0:
+                return res[0]
+        except:
+            continue
+    return None
 
 # --- 🤖 BOT HANDLERS ---
 @app.on_message(filters.command("start"))
@@ -63,25 +63,41 @@ async def start(client, message):
 @app.on_message(filters.command("song"))
 async def song_handler(client, message):
     if len(message.command) < 2:
-        return await message.reply_text("Bhai, gaane ka naam toh likh! Jaise: `/song Safarnama`")
+        return await message.reply_text("Bhai, gaane ka naam toh likh! Jaise: `/song Kesariya`")
 
     query = " ".join(message.command[1:])
-    m = await message.reply_text("🔎 **Dhoond raha hoon, thoda sabar...**")
+    m = await message.reply_text("🔎 **Searching for your song...**")
 
-    song_data = search_saavn(query)
-    if not song_data:
-        return await m.edit("❌ Gaana nahi mila! Kuch aur try kar.")
+    song = search_song(query)
+    if not song:
+        return await m.edit("❌ Gaana nahi mila! Ek baar spelling check karo ya artist ka naam bhi saath likho.")
 
     try:
-        title = song_data['name']
-        artist = song_data['artists']['primary'][0]['name']
-        download_url = song_data['downloadUrl'][-1]['url'] # Best quality
-        thumb = song_data['image'][-1]['url']
+        # Data Extraction with Fallbacks
+        title = song.get('name') or song.get('song') or "Unknown Title"
+        artist = song.get('artists', {}).get('primary', [{}])[0].get('name') or song.get('primary_artists') or "Unknown Artist"
         
-        await m.edit(f"✍️ **'{title}' ke lyrics likh raha hoon...**")
-        lyrics_text = get_clean_lyrics(title, artist)
-        
-        # Telegram limit handle karne ke liye (max 4096 chars)
+        # Audio Link Extraction
+        download_url = ""
+        if 'downloadUrl' in song:
+            download_url = song['downloadUrl'][-1]['url']
+        else:
+            download_url = song.get('media_url')
+
+        # Thumbnail
+        thumb = ""
+        if 'image' in song:
+            thumb = song['image'][-1]['url']
+        else:
+            thumb = song.get('image')
+
+        await m.edit("✍️ **Fetching Clean Lyrics...**")
+        try:
+            g_song = genius.search_song(title, artist)
+            lyrics_text = g_song.lyrics.split('Lyrics', 1)[-1].strip() if g_song else "Lyrics nahi mil paye. 😔"
+        except:
+            lyrics_text = "Lyrics search mein error aaya."
+
         if len(lyrics_text) > 3500: lyrics_text = lyrics_text[:3500] + "..."
 
         caption = (
@@ -93,31 +109,25 @@ async def song_handler(client, message):
             f"⚡ **Powered by:** @Zeabur"
         )
 
-        await m.edit("📥 **Gaana pack kar raha hoon (Downloading)...**")
-        file_name = f"{title}.mp3".replace("/", "-") # Safe filename
-        audio_res = requests.get(download_url)
-        with open(file_name, 'wb') as f: f.write(audio_res.content)
+        await m.edit("📥 **Downloading Audio...**")
+        file_name = f"{title}.mp3".replace("/", "-")
+        audio_data = requests.get(download_url).content
+        with open(file_name, 'wb') as f: f.write(audio_data)
 
-        # Final Delivery
-        await message.reply_photo(
-            photo=thumb,
-            caption=caption,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Search More 🔎", switch_inline_query_current_chat="")]
-            ])
-        )
+        # Delivery
+        await message.reply_photo(photo=thumb, caption=caption)
         await message.reply_audio(
             audio=open(file_name, 'rb'), 
             title=title, 
             performer=artist,
-            thumb=thumb
+            thumb=thumb if thumb.startswith("http") else None
         )
         
         if os.path.exists(file_name): os.remove(file_name)
         await m.delete()
 
     except Exception as e:
-        await m.edit(f"Error: {e}")
+        await m.edit(f"Error: {e}\n\nAPI ne data thoda alag format mein bheja hai, please try another song.")
 
-print("Bot deployed successfully on Zeabur!")
+print("Bot is ready for Zeabur!")
 app.run()
