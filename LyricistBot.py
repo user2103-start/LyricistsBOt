@@ -10,7 +10,7 @@ import lyricsgenius
 # --- 🌐 RENDER WEB SERVER ---
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Music Bot is Live!"
+def home(): return "Music Bot is Stable Now!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -30,6 +30,20 @@ CHANNEL_LINK = "https://t.me/+JPgViOHx7bdlMDZl"
 app = Client("LyricistBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 genius = lyricsgenius.Genius(GENIUS_TOKEN)
 
+# --- 🎵 STABLE API SEARCH ---
+def search_saavn(query):
+    # Using a backup stable API
+    search_url = f"https://jiosaavn-api-v3.vercel.app/search/songs?query={query}"
+    try:
+        response = requests.get(search_url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0:
+                return data[0]
+    except Exception as e:
+        print(f"Search Error: {e}")
+    return None
+
 # --- 🔐 FORCE SUBSCRIBE ---
 async def check_fsub(client, message):
     try:
@@ -43,19 +57,6 @@ async def check_fsub(client, message):
         return False
     except Exception: return True
 
-# --- 🎵 MUSIC SEARCH (JioSaavn) ---
-def search_saavn(query):
-    # Using a public JioSaavn API
-    search_url = f"https://saavn.me/search/songs?query={query}"
-    response = requests.get(search_url).json()
-    if response['status'] == 'SUCCESS' and response['data']['results']:
-        return response['data']['results'][0]
-    return None
-
-@app.on_message(filters.command("start"))
-async def start(client, message):
-    await message.reply_text(f"Hello {message.from_user.mention}!\n\nI am your **Premium Music Bot**. Send `/song [name]` to download.")
-
 @app.on_message(filters.command("song"))
 async def song_handler(client, message):
     if not await check_fsub(client, message): return
@@ -64,62 +65,56 @@ async def song_handler(client, message):
     if not query:
         return await message.reply_text("Please provide a song name! Example: `/song Peaches`")
 
-    m = await message.reply_text("🔎 **Searching on JioSaavn...**")
+    m = await message.reply_text("🔎 **Searching for your song...**")
 
     song_data = search_saavn(query)
     if not song_data:
-        return await m.edit("❌ **Song not found!** Try another name.")
-
-    title = song_data['name']
-    album = song_data['album']['name']
-    duration = song_data['duration']
-    thumbnail = song_data['image'][2]['link'] # High quality image
-    download_url = song_data['downloadUrl'][4]['link'] # 320kbps link
-    artist = song_data['primaryArtists']
-
-    await m.edit("✍️ **Fetching lyrics...**")
-    
-    lyrics_text = "Lyrics not available for this track. 😶"
-    try:
-        song_lyric = genius.search_song(title, artist.split(',')[0])
-        if song_lyric: lyrics_text = song_lyric.lyrics
-    except: pass
-
-    # --- PREMIUM CAPTION DESIGN ---
-    caption = (
-        f"🎵 **Song:** `{title}`\n"
-        f"💿 **Album:** {album}\n"
-        f"👤 **Artist:** {artist}\n"
-        f"⏱️ **Duration:** {duration} sec\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"📜 **LYRICS:**\n\n"
-        f"{lyrics_text[:800]}..." 
-        f"\n━━━━━━━━━━━━━━━━━━"
-    )
-
-    buttons = InlineKeyboardMarkup([[
-        InlineKeyboardButton("📢 Updates", url=CHANNEL_LINK)
-    ]])
+        return await m.edit("❌ **API Error:** Could not find the song or API is down. Try again later.")
 
     try:
-        # Download file
-        audio_file = f"{title}.mp3"
-        doc = requests.get(download_url)
-        with open(audio_file, 'wb') as f:
-            f.write(doc.content)
+        title = song_data.get('song', 'Unknown Title')
+        album = song_data.get('album', 'Unknown Album')
+        artist = song_data.get('singers', 'Unknown Artist')
+        thumbnail = song_data.get('image')
+        # Download Link (High Quality 320kbps)
+        download_url = song_data.get('media_url')
 
-        await message.reply_photo(photo=thumbnail, caption=caption, reply_markup=buttons)
-        await message.reply_audio(
-            audio=open(audio_file, 'rb'), 
-            title=title, 
-            performer=artist,
-            thumb=None # Saavn images are webp, Telegram prefers jpg for thumbs
+        if not download_url:
+            return await m.edit("❌ **Error:** High quality audio link not found.")
+
+        await m.edit("✍️ **Fetching lyrics...**")
+        lyrics_text = "Lyrics not found. 😶"
+        try:
+            song_lyric = genius.search_song(title, artist.split(',')[0])
+            if song_lyric: lyrics_text = song_lyric.lyrics
+        except: pass
+
+        caption = (
+            f"🎵 **Song:** `{title}`\n"
+            f"👤 **Artist:** {artist}\n"
+            f"💿 **Album:** {album}\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📜 **LYRICS:**\n\n"
+            f"{lyrics_text[:700]}..." 
+            f"\n━━━━━━━━━━━━━━━━━━"
         )
+
+        audio_file = f"{title}.mp3"
+        await m.edit("📥 **Downloading...**")
+        
+        # Download Audio
+        audio_data = requests.get(download_url).content
+        with open(audio_file, 'wb') as f:
+            f.write(audio_data)
+
+        await message.reply_photo(photo=thumbnail, caption=caption)
+        await message.reply_audio(audio=open(audio_file, 'rb'), title=title, performer=artist)
         
         await m.delete()
         os.remove(audio_file)
-    except Exception as e:
-        await m.edit(f"❌ **Error:** `{str(e)[:100]}`")
 
-print("Bot is running on JioSaavn Engine!")
+    except Exception as e:
+        await m.edit(f"❌ **System Error:** `{str(e)[:100]}`")
+
+print("Bot is starting with V3 API Engine...")
 app.run()
