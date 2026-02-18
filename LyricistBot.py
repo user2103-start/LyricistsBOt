@@ -8,12 +8,12 @@ from pyrogram.errors import UserNotParticipant
 import yt_dlp
 import lyricsgenius
 
-# --- 🌐 RENDER PORT BINDING ---
+# --- 🌐 RENDER WEB SERVER ---
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Bot is Running Live with Bypass Logic!"
+    return "Bot is Running!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -41,7 +41,7 @@ async def check_fsub(client, message):
         return True
     except UserNotParticipant:
         await message.reply_text(
-            "⚠️ **Wait Bhai!**\n\nBot use karne ke liye hamare update channel ko join karna zaroori hai.",
+            "⚠️ **Access Denied!**\n\nPlease join our update channel to use this bot.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)
             ]])
@@ -53,7 +53,7 @@ async def check_fsub(client, message):
 # --- 🎵 MUSIC & LYRICS ---
 @app.on_message(filters.command("start"))
 async def start(client, message):
-    await message.reply_text(f"Hi {message.from_user.mention}!\n\nMain music aur lyrics bot hoon. Gaana dhoondne ke liye `/song [naam]` likho.")
+    await message.reply_text(f"Hello {message.from_user.mention}!\n\nI am a Music & Lyrics Downloader bot. Use `/song [song name]` to start.")
 
 @app.on_message(filters.command("song"))
 async def song_handler(client, message):
@@ -62,11 +62,15 @@ async def song_handler(client, message):
 
     query = " ".join(message.command[1:])
     if not query:
-        return await message.reply_text("Bhai, gaane ka naam toh likho! `/song Kesariya`")
+        return await message.reply_text("Please provide a song name! Example: `/song Blinding Lights`")
 
-    m = await message.reply_text("🔎 **Dhoond raha hoon...**")
+    m = await message.reply_text("🔎 **Searching for the song...**")
 
-    # --- 🛠 BYPASS OPTIONS ADDED HERE ---
+    # Check if cookies file exists
+    cookie_dict = {}
+    if os.path.exists("cookies.txt"):
+        cookie_dict['cookiefile'] = 'cookies.txt'
+
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': '%(title)s.mp3',
@@ -75,30 +79,20 @@ async def song_handler(client, message):
         'default_search': 'ytsearch',
         'noplaylist': True,
         'nocheckcertificate': True,
-        'geo_bypass': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
-        }
+        **cookie_dict # This injects cookies if the file exists
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)
-            if 'entries' in info:
-                video = info['entries'][0]
-            else:
-                video = info
-                
+            video = info['entries'][0] if 'entries' in info else info
             title = video['title']
             thumbnail = video.get('thumbnail')
             file_name = ydl.prepare_filename(video)
 
-        await m.edit("✍️ **Lyrics nikaal raha hoon...**")
+        await m.edit("✍️ **Fetching lyrics...**")
         
-        lyrics_text = "Lyrics nahi mil payi! 😶"
+        lyrics_text = "Lyrics not found! 😶"
         try:
             song = genius.search_song(title)
             if song:
@@ -108,7 +102,7 @@ async def song_handler(client, message):
 
         caption = (
             f"🎵 **Song:** `{title}`\n"
-            f"👤 **By:** {message.from_user.mention}\n\n"
+            f"👤 **Requested by:** {message.from_user.mention}\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📜 **LYRICS:**\n\n"
             f"{lyrics_text[:900]}..." 
@@ -126,7 +120,11 @@ async def song_handler(client, message):
         os.remove(file_name)
 
     except Exception as e:
-        await m.edit(f"❌ **Error:**\n`{str(e)[:200]}`\n\nBhai, YouTube ne block kiya hai. Agar ye baar-baar ho toh hume cookies use karni padengi.")
+        error_msg = str(e)
+        if "Sign in to confirm" in error_msg:
+            await m.edit("❌ **Error:** YouTube is blocking the request. Please make sure the `cookies.txt` file is uploaded and valid.")
+        else:
+            await m.edit(f"❌ **An unexpected error occurred:**\n`{error_msg[:200]}`")
 
-print("Bot is starting with bypass headers...")
+print("Bot is starting with English interface...")
 app.run()
