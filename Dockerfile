@@ -1,7 +1,5 @@
-# Python 3.11 use karenge taaki 'Self' wala error khatam ho jaye
 FROM python:3.11-slim
 
-# FFMPEG install karne ke liye stable command
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
     apt-get clean && \
