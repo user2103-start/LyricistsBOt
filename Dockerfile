@@ -1,16 +1,16 @@
-FROM python:3.10-slim
+# Hum Alpine use karenge kyunki ye fast aur error-free hai
+FROM python:3.10-alpine
 
-# Error 100 se bachne ke liye mirror aur cache clean-up add kiya hai
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# FFMPEG aur zaroori tools install karne ke liye
+RUN apk add --no-cache ffmpeg gcc musl-dev python3-dev libffi-dev
 
 WORKDIR /app
 
+# Requirements install karein
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Bot run karein
 CMD ["python", "LyricistBot.py"]
