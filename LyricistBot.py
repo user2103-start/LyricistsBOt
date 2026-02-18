@@ -1,17 +1,36 @@
 import os
+import asyncio
+import threading
+from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import UserNotParticipant
 import yt_dlp
 import lyricsgenius
 
-# --- 🟢 CONFIGURATION ---
-API_ID = "38456866" # Yahan apni API ID daalo
-API_HASH = "30a8f347f538733a1d57dae8cc458ddc" # Yahan apna API HASH daalo
-BOT_TOKEN = "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg" # BotFather wala token
+# --- 🌐 RENDER PORT BINDING FIX ---
+# Ye hissa Render ko 'Live' dikhane ke liye hai
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Bot is Running Live!"
+
+def run_web():
+    # Render default port 10000 use karta hai, ye wahi bind karega
+    port = int(os.environ.get("PORT", 8080))
+    web_app.run(host="0.0.0.0", port=port)
+
+# Background mein web server start karein
+threading.Thread(target=run_web, daemon=True).start()
+
+# --- 🟢 CONFIGURATION (Updated with your data) ---
+API_ID = 28456866  # Maine isse integer bana diya hai
+API_HASH = "30a8f347f538733a1d57dae8cc458ddc"
+BOT_TOKEN = "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg"
 GENIUS_TOKEN = "w-XTArszGpAQaaLu-JlViwy1e-0rxx4dvwqQzOEtcmmpYndHm_nkFTvAB5BsY-ww"
 
-ADMIN_ID = 6593129349 # Apni numerical ID daalo (example: 12345678)
+ADMIN_ID = 6593129349
 CHANNEL_ID = -1003751644036 
 CHANNEL_LINK = "https://t.me/+JPgViOHx7bdlMDZl"
 
@@ -32,9 +51,14 @@ async def check_fsub(client, message):
         )
         return False
     except Exception:
+        # Agar koi error aaye (like bot admin nahi hai), toh bypass kar do
         return True
 
 # --- 🎵 MUSIC & LYRICS ---
+@app.on_message(filters.command("start"))
+async def start(client, message):
+    await message.reply_text(f"Hi {message.from_user.mention}!\n\nMain music aur lyrics bot hoon. Gaana dhoondne ke liye `/song [naam]` likho.")
+
 @app.on_message(filters.command("song"))
 async def song_handler(client, message):
     if not await check_fsub(client, message):
@@ -50,21 +74,28 @@ async def song_handler(client, message):
         'format': 'bestaudio/best',
         'outtmpl': '%(title)s.mp3',
         'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
-        'quiet': True
+        'quiet': True,
+        'default_search': 'ytsearch',
+        'noplaylist': True
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch:{query}", download=True)
-            video = info['entries'][0]
+            info = ydl.extract_info(query, download=True)
+            if 'entries' in info:
+                video = info['entries'][0]
+            else:
+                video = info
+                
             title = video['title']
-            thumbnail = video['thumbnail']
+            thumbnail = video.get('thumbnail')
             file_name = ydl.prepare_filename(video)
 
         await m.edit("✍️ **Lyrics nikaal raha hoon...**")
         
         lyrics_text = "Lyrics nahi mil payi! 😶"
         try:
+            # Lyrics search with song title
             song = genius.search_song(title)
             if song:
                 lyrics_text = song.lyrics
@@ -80,7 +111,11 @@ async def song_handler(client, message):
             f"\n━━━━━━━━━━━━━━━━━━"
         )
 
-        await message.reply_photo(photo=thumbnail, caption=caption)
+        if thumbnail:
+            await message.reply_photo(photo=thumbnail, caption=caption)
+        else:
+            await message.reply_text(caption)
+            
         await message.reply_audio(audio=open(file_name, 'rb'), title=title)
         
         await m.delete()
@@ -89,4 +124,5 @@ async def song_handler(client, message):
     except Exception as e:
         await m.edit(f"Galti ho gayi: {str(e)}")
 
+print("Bot is starting...")
 app.run()
