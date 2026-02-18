@@ -25,7 +25,7 @@ def run_web():
 threading.Thread(target=run_web, daemon=True).start()
 
 # --- 🟢 CONFIGURATION (Updated with your data) ---
-API_ID = 28456866  # Maine isse integer bana diya hai
+API_ID = 38456866  # Maine isse integer bana diya hai
 API_HASH = "30a8f347f538733a1d57dae8cc458ddc"
 BOT_TOKEN = "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg"
 GENIUS_TOKEN = "w-XTArszGpAQaaLu-JlViwy1e-0rxx4dvwqQzOEtcmmpYndHm_nkFTvAB5BsY-ww"
