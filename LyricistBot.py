@@ -1,22 +1,19 @@
 import os
+import asyncio
 import requests
 import threading
 import lyricsgenius
 from flask import Flask
 from pyrogram import Client, filters
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-# --- 🌐 ZEABUR PORT HANDLING ---
+# --- 🌐 WEB SERVER (RENDER KEEP-ALIVE) ---
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Tunneling Engine Active! 🛰️"
+def home(): return "SoundStat Engine on Render is ALIVE! 🚀"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host="0.0.0.0", port=port)
-
-threading.Thread(target=run_web, daemon=True).start()
 
 # --- 🟢 CONFIG ---
 API_ID = 38456866
@@ -24,69 +21,59 @@ API_HASH = "30a8f347f538733a1d57dae8cc458ddc"
 BOT_TOKEN = "8454384380:AAEsXBAm3IrtW3Hf1--2mH3xAyhnan-J3lg"
 GENIUS_TOKEN = "w-XTArszGpAQaaLu-JlViwy1e-0rxx4dvwqQzOEtcmmpYndHm_nkFTvAB5BsY-ww"
 
-app = Client("FirewallBreaker", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("LyricistBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 genius = lyricsgenius.Genius(GENIUS_TOKEN)
 
-# --- 🛡️ ANTI-BLOCK REQUEST SESSION ---
-def get_secure_session():
-    session = requests.Session()
-    # Retry logic: Agar connection fail ho toh 5 baar try karo automatically
-    retry = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504])
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('https://', adapter)
-    session.mount('http://', adapter)
-    # Fake User-Agent taaki Zeabur bot na lage
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-    })
-    return session
+# --- 🎵 MUSIC FETCH LOGIC ---
+def get_music_link(query):
+    # Render ke liye direct fast bridge
+    return f"https://api.vyt-dlp.workers.dev/download_query?q={query}"
 
 @app.on_message(filters.command("song"))
 async def song_handler(client, message):
     if len(message.command) < 2:
-        return await message.reply_text("Bhai, naam toh likho!")
+        return await message.reply_text("Bhai, naam toh likh!")
 
     query = " ".join(message.command[1:])
-    m = await message.reply_text("🌪️ **Breaking Firewall...**")
-
-    # Bridge URLs
-    dl_url = f"https://api.vyt-dlp.workers.dev/download_query?q={query}"
-    
-    file_path = f"song_{message.from_user.id}.mp3"
-    session = get_secure_session()
+    m = await message.reply_text("🎬 **Fetching from SoundStat + Render Bridge...**")
 
     try:
-        # Step 1: Lyrics pehle nikaal lo (Ispe block kam hota hai)
+        title = query 
+        dl_url = get_music_link(title)
+        file_path = f"song_{message.from_user.id}.mp3"
+
+        # Lyrics fetch (Optional but cool)
         try:
-            g_song = genius.search_song(query)
-            lyrics = g_song.lyrics.split('Lyrics', 1)[-1].strip() if g_song else "Lyrics missing."
+            g_song = genius.search_song(title)
+            lyrics = g_song.lyrics.split('Lyrics', 1)[-1].strip() if g_song else "No lyrics."
         except:
-            lyrics = "Lyrics error."
+            lyrics = "Lyrics fetch error."
 
-        # Step 2: Download with Tunneling logic
-        await m.edit("🛰️ **Routing through Tunnel...**")
-        
-        # Zeabur connection pool fix: stream=True ke saath timeout bada rakho
-        with session.get(dl_url, stream=True, timeout=45) as r:
-            r.raise_for_status()
-            with open(file_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=262144): # 256KB chunks
-                    if chunk: f.write(chunk)
+        # Direct Stream download
+        r = requests.get(dl_url, stream=True, timeout=60)
+        with open(file_path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=1024*1024): # 1MB chunks for Render speed
+                if chunk: f.write(chunk)
 
-        await message.reply_photo(
-            photo="https://graph.org/file/default-thumb.jpg",
-            caption=f"🎵 **{query.capitalize()}**\n\n📜 `{lyrics[:800]}`"
-        )
-        await message.reply_audio(audio=open(file_path, 'rb'), title=query)
+        await message.reply_audio(audio=open(file_path, 'rb'), title=title, caption=f"📜 `{lyrics[:600]}`")
         await m.delete()
+        if os.path.exists(file_path): os.remove(file_path)
 
     except Exception as e:
-        error_msg = str(e)
-        if "Max retries exceeded" in error_msg:
-            await m.edit("❌ Zeabur IP is Hard-Blocked. I'm trying an emergency port...")
-        else:
-            await m.edit(f"❌ Error: {error_msg[:100]}")
+        await m.edit(f"❌ Error: {str(e)[:50]}")
 
-    if os.path.exists(file_path): os.remove(file_path)
+# --- 🚀 ASYNC LOOP FIX FOR RENDER ---
+async def main():
+    # Start Flask in a background thread
+    threading.Thread(target=run_web, daemon=True).start()
+    # Start Bot
+    await app.start()
+    print("Bot is started on Render!")
+    await asyncio.Event().wait() # Keep it running
 
-app.run()
+if __name__ == "__main__":
+    # Naye Python versions ke liye loop handle karne ka sahi tareeka
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
