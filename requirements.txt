@@ -1,6 +1,5 @@
 pyrogram
 tgcrypto
-requests[socks]
+requests
 flask
 lyricsgenius
-urllib3
